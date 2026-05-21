@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Download, Flame, Layers3, SplitSquareHorizontal, Target, Trash2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, Flame, Target, Trash2 } from 'lucide-react';
 import { type CSSProperties, type MouseEvent, type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ImageDropzone } from './ImageDropzone';
 import type { ComparisonResult, DiffRegion, MismatchType, Severity } from '../lib/compare';
@@ -18,8 +18,6 @@ type Props = {
   onClearDesign: () => void;
   onClearImplementation: () => void;
 };
-
-type Tab = 'implementation' | 'side' | 'overlay';
 
 type ScoreStatus = 'empty' | 'low' | 'medium' | 'high';
 
@@ -144,7 +142,6 @@ export function ReportView({
   onClearDesign,
   onClearImplementation
 }: Props) {
-  const [tab, setTab] = useState<Tab>('overlay');
   const [showHeatmap, setShowHeatmap] = useState(true);
   const [showRegionFrames, setShowRegionFrames] = useState(false);
   const [showShiftArrows, setShowShiftArrows] = useState(false);
@@ -201,7 +198,6 @@ export function ReportView({
   const excludedRegionCount = result ? excludedRegionIds.size : 0;
   const conformity = result ? Math.max(0, 100 - result.diffPercentage) : 0;
   const implementationPreviewUrl = implementation?.url ?? '';
-  const implementationCaption = showHeatmap ? 'Вёрстка с тепловой картой' : 'Вёрстка';
   const conformityBarValue = Math.max(0, Math.min(100, conformity));
   const roundedConformity = result ? Math.round(conformityBarValue) : null;
   const scoreTone = roundedConformity !== null ? scoreStatus(roundedConformity) : 'empty';
@@ -356,7 +352,7 @@ export function ReportView({
 
     context.imageSmoothingEnabled = false;
 
-    const baseImage = await imageUrlToImage(tab === 'overlay' && !showHeatmap ? design.url : implementation.url);
+    const baseImage = await imageUrlToImage(showHeatmap ? implementation.url : design.url);
     context.drawImage(baseImage, 0, 0, result.width, result.height);
 
     if (showHeatmap) {
@@ -364,7 +360,7 @@ export function ReportView({
       context.globalAlpha = overlayOpacity;
       context.drawImage(heatmapImage, 0, 0, result.width, result.height);
       context.globalAlpha = 1;
-    } else if (tab === 'overlay') {
+    } else {
       const implementationImage = await imageUrlToImage(implementation.url);
       context.globalAlpha = overlayOpacity;
       context.drawImage(implementationImage, 0, 0, result.width, result.height);
@@ -452,45 +448,17 @@ export function ReportView({
   function renderComparisonWorkspace() {
     if (!result || !design || !implementation) return renderUploadWorkspace();
 
-    if (tab === 'implementation') {
-      return (
-        <ScaleCanvas width={result.width} height={result.height} className="implementation-stage" onClick={handleStageClick}>
-          <img className="base-image" src={implementationPreviewUrl} alt="Вёрстка с отмеченными ошибками" />
-          {showHeatmap && <img className="overlay-image heatmap-overlay" style={{ opacity: overlayOpacity }} src={result.heatmapUrl} alt="Тепловая карта отличий" />}
-          {renderRegionOverlays()}
-        </ScaleCanvas>
-      );
-    }
-
-    if (tab === 'side') {
-      return (
-        <div className="side-by-side single-preview">
-          <figure style={{ '--canvas-ratio': result.width / result.height } as CSSProperties}>
-            <figcaption>{implementationCaption}</figcaption>
-            {showHeatmap ? (
-              <span className="side-heatmap-preview">
-                <img className="base-image" src={implementationPreviewUrl} alt="Вёрстка" />
-                <img className="overlay-image heatmap-overlay" style={{ opacity: overlayOpacity }} src={result.heatmapUrl} alt="Тепловая карта отличий" />
-              </span>
-            ) : (
-              <img src={implementationPreviewUrl} alt="Вёрстка" />
-            )}
-          </figure>
-        </div>
-      );
-    }
-
     return (
       <ScaleCanvas width={result.width} height={result.height} onClick={handleStageClick}>
         {showHeatmap ? (
           <>
-            <img className="base-image" src={design.url} alt="Макет в тепловой карте" />
+            <img className="base-image" src={implementationPreviewUrl} alt="Вёрстка" />
             <img className="overlay-image heatmap-overlay" style={{ opacity: overlayOpacity }} src={result.heatmapUrl} alt="Тепловая карта отличий" />
           </>
         ) : (
           <>
             <img className="base-image" src={design.url} alt="Макет" />
-            <img className="overlay-image" style={{ opacity: overlayOpacity }} src={implementationPreviewUrl} alt="Реализация" />
+            <img className="overlay-image" style={{ opacity: overlayOpacity }} src={implementationPreviewUrl} alt="Вёрстка" />
           </>
         )}
         {renderRegionOverlays()}
@@ -566,29 +534,14 @@ export function ReportView({
           >
             Рамки
           </button>
-          <button type="button" className={tab === 'implementation' ? 'active' : ''} onClick={() => setTab('implementation')}>
-            <Target size={16} /> Вёрстка
-          </button>
-          <button type="button" className={tab === 'side' ? 'active' : ''} onClick={() => setTab('side')}>
-            <SplitSquareHorizontal size={16} /> Рядом
-          </button>
-          <div className={`overlay-control ${tab === 'overlay' ? 'active' : ''}`}>
-            <button
-              type="button"
-              className={tab === 'overlay' ? 'active' : ''}
-              onClick={() => {
-                setTab('overlay');
-              }}
-            >
-              <Layers3 size={16} /> Наложение
-            </button>
+          <div className="overlay-control active">
             <label aria-label="Прозрачность наложения">
+              <span>Прозрачность</span>
               <strong>{Math.round(overlayOpacity * 100)}%</strong>
               <input
                 type="range"
                 min="0"
                 max="100"
-                disabled={tab !== 'overlay' && !showHeatmap}
                 value={Math.round(overlayOpacity * 100)}
                 onInput={(event) => onOverlayOpacityChange(Number(event.currentTarget.value) / 100)}
                 onChange={(event) => onOverlayOpacityChange(Number(event.currentTarget.value) / 100)}

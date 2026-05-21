@@ -1170,15 +1170,6 @@ p {
   max-height: min(100%, calc(100dvh - 218px));
 }
 
-.viewer-card-primary .implementation-stage {
-  max-height: min(100%, calc(100dvh - 218px));
-}
-
-.implementation-stage {
-  border-color: rgba(220, 38, 38, 0.35);
-  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.16);
-}
-
 .viewer-toolbar {
   --viewer-control-height: 30px;
   display: grid;
@@ -1233,14 +1224,9 @@ p {
   gap: 6px;
   align-items: center;
   min-width: 0;
-  padding: 1px;
-  border: 1px solid transparent;
+  padding: 1px 8px;
+  border: 1px solid #bfdbfe;
   border-radius: 14px;
-  transition: 0.18s ease;
-}
-
-.overlay-control.active {
-  border-color: #bfdbfe;
   background: #eff6ff;
 }
 
@@ -1248,17 +1234,15 @@ p {
   display: inline-flex;
   gap: 6px;
   align-items: center;
-  min-width: 142px;
-  padding-right: 8px;
+  min-width: 212px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 850;
-  transition: 0.18s ease;
 }
 
-.overlay-control:not(.active) label {
-  pointer-events: none;
-  opacity: 0.45;
+.overlay-control label span {
+  color: #1d4ed8;
+  font-weight: 900;
 }
 
 .overlay-control label strong {
@@ -1431,64 +1415,6 @@ p {
 
 .region-low {
   color: #22c55e;
-}
-
-.side-by-side {
-  display: grid;
-  flex: 1 1 auto;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.side-by-side.single-preview {
-  grid-template-columns: minmax(0, 1fr);
-}
-
-.side-by-side figure {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  align-items: center;
-  min-width: 0;
-  min-height: 0;
-  margin: 0;
-  overflow: hidden;
-  border: 1px solid #dbe4f0;
-  border-radius: 0;
-  background: #0f172a;
-}
-
-.side-by-side figcaption {
-  justify-self: stretch;
-  padding: 7px 10px;
-  color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
-  font-size: 12px;
-  font-weight: 850;
-}
-
-.side-by-side img {
-  width: 100%;
-  height: 100%;
-  max-height: min(100%, calc(100dvh - 260px));
-  object-fit: contain;
-}
-
-.side-heatmap-preview {
-  position: relative;
-  display: block;
-  width: 100%;
-  max-width: min(100%, calc((100dvh - 260px) * var(--canvas-ratio, 1)));
-  max-height: min(100%, calc(100dvh - 260px));
-  aspect-ratio: var(--canvas-ratio, 1);
-  justify-self: center;
-  overflow: hidden;
-}
-
-.side-heatmap-preview .base-image,
-.side-heatmap-preview .overlay-image {
-  object-fit: fill;
 }
 
 .issues-header {
@@ -1948,7 +1874,6 @@ p {
 
   .topbar,
   .hero-summary,
-  .side-by-side,
   .dropzone-grid,
   .summary-strip,
   .viewer-toolbar {
@@ -1995,8 +1920,7 @@ p {
     flex: 1 1 0;
   }
 
-  .viewer-card-primary .canvas-stage,
-  .viewer-card-primary .implementation-stage {
+  .viewer-card-primary .canvas-stage {
     min-height: 0;
     max-height: min(420px, 62dvh);
   }
@@ -2028,8 +1952,7 @@ p {
     grid-template-columns: 1fr;
   }
 
-  .viewer-card-primary .canvas-stage,
-  .viewer-card-primary .implementation-stage {
+  .viewer-card-primary .canvas-stage {
     min-height: 0;
     max-height: none;
   }
