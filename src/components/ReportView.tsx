@@ -352,18 +352,18 @@ export function ReportView({
 
     context.imageSmoothingEnabled = false;
 
-    const baseImage = await imageUrlToImage(showHeatmap ? implementation.url : design.url);
-    context.drawImage(baseImage, 0, 0, result.width, result.height);
+    const designImage = await imageUrlToImage(design.url);
+    context.drawImage(designImage, 0, 0, result.width, result.height);
+
+    const implementationImage = await imageUrlToImage(implementation.url);
+    context.globalAlpha = overlayOpacity;
+    context.drawImage(implementationImage, 0, 0, result.width, result.height);
+    context.globalAlpha = 1;
 
     if (showHeatmap) {
       const heatmapImage = await imageUrlToImage(result.heatmapUrl);
       context.globalAlpha = overlayOpacity;
       context.drawImage(heatmapImage, 0, 0, result.width, result.height);
-      context.globalAlpha = 1;
-    } else {
-      const implementationImage = await imageUrlToImage(implementation.url);
-      context.globalAlpha = overlayOpacity;
-      context.drawImage(implementationImage, 0, 0, result.width, result.height);
       context.globalAlpha = 1;
     }
 
@@ -450,16 +450,10 @@ export function ReportView({
 
     return (
       <ScaleCanvas width={result.width} height={result.height} onClick={handleStageClick}>
-        {showHeatmap ? (
-          <>
-            <img className="base-image" src={implementationPreviewUrl} alt="Вёрстка" />
-            <img className="overlay-image heatmap-overlay" style={{ opacity: overlayOpacity }} src={result.heatmapUrl} alt="Тепловая карта отличий" />
-          </>
-        ) : (
-          <>
-            <img className="base-image" src={design.url} alt="Макет" />
-            <img className="overlay-image" style={{ opacity: overlayOpacity }} src={implementationPreviewUrl} alt="Вёрстка" />
-          </>
+        <img className="base-image" src={design.url} alt="Макет" />
+        <img className="overlay-image" style={{ opacity: overlayOpacity }} src={implementationPreviewUrl} alt="Вёрстка" />
+        {showHeatmap && (
+          <img className="overlay-image heatmap-overlay" style={{ opacity: overlayOpacity }} src={result.heatmapUrl} alt="Тепловая карта отличий" />
         )}
         {renderRegionOverlays()}
       </ScaleCanvas>
@@ -535,9 +529,8 @@ export function ReportView({
             Рамки
           </button>
           <div className="overlay-control active">
-            <label aria-label="Прозрачность наложения">
-              <span>Прозрачность</span>
-              <strong>{Math.round(overlayOpacity * 100)}%</strong>
+            <label aria-label="Баланс видимости макета и вёрстки">
+              <span>Макет</span>
               <input
                 type="range"
                 min="0"
@@ -546,6 +539,7 @@ export function ReportView({
                 onInput={(event) => onOverlayOpacityChange(Number(event.currentTarget.value) / 100)}
                 onChange={(event) => onOverlayOpacityChange(Number(event.currentTarget.value) / 100)}
               />
+              <span>Вёрстка</span>
             </label>
           </div>
         </div>

@@ -1232,29 +1232,22 @@ p {
 
 .overlay-control label {
   display: inline-flex;
-  gap: 6px;
+  gap: 8px;
   align-items: center;
-  min-width: 212px;
+  min-width: 202px;
   color: var(--muted);
   font-size: 11px;
   font-weight: 850;
 }
 
 .overlay-control label span {
+  flex: 0 0 auto;
   color: #1d4ed8;
   font-weight: 900;
 }
 
-.overlay-control label strong {
-  flex: 0 0 38px;
-  min-width: 38px;
-  color: #344054;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
 .overlay-control input {
-  width: 84px;
+  width: 92px;
   accent-color: var(--blue);
   cursor: pointer;
 }
