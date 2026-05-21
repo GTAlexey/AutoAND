@@ -73,6 +73,26 @@ const SHIFT_SEARCH_RADIUS = 32;
 const SHIFT_SAMPLE_LIMIT = 360;
 const MIN_SHIFT_IMPROVEMENT = 0.08;
 const REGION_CONTRAST_MARGIN = 10;
+const BOUNDARY_DETECTION_THRESHOLD = 12;
+const BOUNDARY_FULL_MISS_DISTANCE = 16;
+const BOUNDARY_MATCH_TOLERANCE = 2;
+const BOUNDARY_AREA_WEIGHT = 3;
+const PIXEL_FULL_MISMATCH_RATIO = 0.3;
+
+interface BoundaryMask {
+  mask: Uint8Array;
+  count: number;
+}
+
+interface BoundaryDistanceMap {
+  distances: Float32Array;
+  maxDistance: number;
+}
+
+interface BoundaryMissStats {
+  averageDistance: number;
+  unmatchedCount: number;
+}
 
 interface AverageColor {
   r: number;
@@ -186,6 +206,156 @@ function averageShiftDelta(
   const combined = Number.isFinite(forward) && Number.isFinite(reverse) ? (forward + reverse) / 2 : Number.POSITIVE_INFINITY;
 
   return { forward, reverse, combined };
+}
+
+function buildBoundaryMask(image: ImageData, threshold = BOUNDARY_DETECTION_THRESHOLD): BoundaryMask {
+  const { width, height, data } = image;
+  const mask = new Uint8Array(width * height);
+  let count = 0;
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const index = dataIndex(width, x, y);
+      let isBoundary = false;
+
+      if (x + 1 < width) {
+        isBoundary = colorDeltaBetween(data, index, data, dataIndex(width, x + 1, y)) >= threshold;
+      }
+
+      if (!isBoundary && y + 1 < height) {
+        isBoundary = colorDeltaBetween(data, index, data, dataIndex(width, x, y + 1)) >= threshold;
+      }
+
+      if (!isBoundary && x > 0) {
+        isBoundary = colorDeltaBetween(data, index, data, dataIndex(width, x - 1, y)) >= threshold;
+      }
+
+      if (!isBoundary && y > 0) {
+        isBoundary = colorDeltaBetween(data, index, data, dataIndex(width, x, y - 1)) >= threshold;
+      }
+
+      if (isBoundary) {
+        mask[y * width + x] = 1;
+        count += 1;
+      }
+    }
+  }
+
+  return { mask, count };
+}
+
+function buildBoundaryDistanceMap(targetMask: BoundaryMask, width: number, height: number, maxDistance: number): BoundaryDistanceMap {
+  const totalPixels = width * height;
+  const distances = new Float32Array(totalPixels);
+  distances.fill(maxDistance);
+
+  if (!targetMask.count) {
+    return { distances, maxDistance };
+  }
+
+  for (let pixel = 0; pixel < targetMask.mask.length; pixel += 1) {
+    if (targetMask.mask[pixel]) distances[pixel] = 0;
+  }
+
+  for (let y = 0; y < height; y += 1) {
+    const row = y * width;
+
+    for (let x = 0; x < width; x += 1) {
+      const index = row + x;
+      let best = distances[index];
+
+      if (x > 0) best = Math.min(best, distances[index - 1] + 1);
+      if (y > 0) {
+        const up = index - width;
+        best = Math.min(best, distances[up] + 1);
+        if (x > 0) best = Math.min(best, distances[up - 1] + Math.SQRT2);
+        if (x + 1 < width) best = Math.min(best, distances[up + 1] + Math.SQRT2);
+      }
+
+      distances[index] = Math.min(best, maxDistance);
+    }
+  }
+
+  for (let y = height - 1; y >= 0; y -= 1) {
+    const row = y * width;
+
+    for (let x = width - 1; x >= 0; x -= 1) {
+      const index = row + x;
+      let best = distances[index];
+
+      if (x + 1 < width) best = Math.min(best, distances[index + 1] + 1);
+      if (y + 1 < height) {
+        const down = index + width;
+        best = Math.min(best, distances[down] + 1);
+        if (x > 0) best = Math.min(best, distances[down - 1] + Math.SQRT2);
+        if (x + 1 < width) best = Math.min(best, distances[down + 1] + Math.SQRT2);
+      }
+
+      distances[index] = Math.min(best, maxDistance);
+    }
+  }
+
+  return { distances, maxDistance };
+}
+
+function getBoundaryMissStats(sourceMask: BoundaryMask, targetDistanceMap: BoundaryDistanceMap): BoundaryMissStats {
+  if (!sourceMask.count) {
+    return { averageDistance: 0, unmatchedCount: 0 };
+  }
+
+  let totalDistance = 0;
+  let unmatchedCount = 0;
+
+  for (let pixel = 0; pixel < sourceMask.mask.length; pixel += 1) {
+    if (!sourceMask.mask[pixel]) continue;
+
+    const distance = targetDistanceMap.distances[pixel] ?? targetDistanceMap.maxDistance;
+    totalDistance += distance;
+
+    if (distance > BOUNDARY_MATCH_TOLERANCE) {
+      unmatchedCount += 1;
+    }
+  }
+
+  return {
+    averageDistance: totalDistance / sourceMask.count,
+    unmatchedCount
+  };
+}
+
+export function calculateBoundaryDiffPercentage(design: ImageData, implementation: ImageData, threshold = BOUNDARY_DETECTION_THRESHOLD): number {
+  if (design.width !== implementation.width || design.height !== implementation.height) {
+    throw new Error('ImageData must have equal dimensions before boundary comparison');
+  }
+
+  const width = design.width;
+  const height = design.height;
+  const totalPixels = width * height;
+  const designBoundary = buildBoundaryMask(design, threshold);
+  const implementationBoundary = buildBoundaryMask(implementation, threshold);
+  const totalBoundaryPixels = designBoundary.count + implementationBoundary.count;
+
+  if (!totalBoundaryPixels || !totalPixels) return 0;
+
+  const designDistanceMap = buildBoundaryDistanceMap(designBoundary, width, height, BOUNDARY_FULL_MISS_DISTANCE);
+  const implementationDistanceMap = buildBoundaryDistanceMap(implementationBoundary, width, height, BOUNDARY_FULL_MISS_DISTANCE);
+  const designMissStats = getBoundaryMissStats(designBoundary, implementationDistanceMap);
+  const implementationMissStats = getBoundaryMissStats(implementationBoundary, designDistanceMap);
+  const weightedMissDistance =
+    (designMissStats.averageDistance * designBoundary.count + implementationMissStats.averageDistance * implementationBoundary.count) / totalBoundaryPixels;
+  const distanceMissRatio = clamp(weightedMissDistance / BOUNDARY_FULL_MISS_DISTANCE, 0, 1);
+  const coverageMissRatio = clamp((designMissStats.unmatchedCount + implementationMissStats.unmatchedCount) / totalBoundaryPixels, 0, 1);
+  const boundaryAreaRatio = clamp((totalBoundaryPixels / totalPixels) * BOUNDARY_AREA_WEIGHT, 0, 1);
+  const missRatio = Math.max(distanceMissRatio, coverageMissRatio) * boundaryAreaRatio;
+
+  return Math.round(missRatio * 10000) / 100;
+}
+
+function calculatePixelDiffPercentage(diffPixelCount: number, totalPixels: number): number {
+  if (!totalPixels) return 0;
+
+  const diffRatio = diffPixelCount / totalPixels;
+  return rounded(clamp(diffRatio / PIXEL_FULL_MISMATCH_RATIO, 0, 1) * 100, 2);
 }
 
 export function estimateRegionShift(
@@ -540,11 +710,14 @@ export function compareImageData(
     severityCounts[region.severity] += 1;
   }
 
+  const boundaryDiffPercentage = calculateBoundaryDiffPercentage(design, implementation, settings.threshold);
+  const pixelDiffPercentage = calculatePixelDiffPercentage(diffPixelCount, totalPixels);
+
   return {
     width,
     height,
     diffPixelCount,
-    diffPercentage: Math.round((diffPixelCount / Math.max(totalPixels, 1)) * 10000) / 100,
+    diffPercentage: Math.max(boundaryDiffPercentage, pixelDiffPercentage),
     originalSizeMismatch: meta.originalSizeMismatch,
     designMeta: meta.designMeta,
     implementationMeta: meta.implementationMeta,

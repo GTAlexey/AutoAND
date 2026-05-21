@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { classifySeverity, compareImageData, createHeatmapImageData, estimateRegionShift, findConnectedRegions } from '../src/lib/compare';
+import { calculateBoundaryDiffPercentage, classifySeverity, compareImageData, createHeatmapImageData, estimateRegionShift, findConnectedRegions } from '../src/lib/compare';
 
 function imageData(width: number, height: number, fill: [number, number, number, number]): ImageData {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -29,6 +29,150 @@ function fillRect(image: ImageData, x: number, y: number, width: number, height:
 }
 
 describe('compare engine', () => {
+  it('считает процент отличий по смещению границ, а не по площади', () => {
+    const design = imageData(120, 80, [255, 255, 255, 255]);
+    const implementationSmallShift = imageData(120, 80, [255, 255, 255, 255]);
+    const implementationLargeShift = imageData(120, 80, [255, 255, 255, 255]);
+
+    fillRect(design, 20, 20, 40, 20, [20, 90, 180, 255]);
+    fillRect(implementationSmallShift, 21, 20, 40, 20, [20, 90, 180, 255]);
+    fillRect(implementationLargeShift, 30, 20, 40, 20, [20, 90, 180, 255]);
+
+    const smallShiftPercentage = calculateBoundaryDiffPercentage(design, implementationSmallShift, 20);
+    const largeShiftPercentage = calculateBoundaryDiffPercentage(design, implementationLargeShift, 20);
+    const smallShiftResult = compareImageData(design, implementationSmallShift, { threshold: 20, minArea: 1 }, {
+      designMeta: { name: 'design', width: 120, height: 80 },
+      implementationMeta: { name: 'small-shift', width: 120, height: 80 },
+      originalSizeMismatch: false,
+      heatmapUrl: 'data:image/png;base64,test'
+    });
+
+    expect(smallShiftPercentage).toBeGreaterThan(0);
+    expect(smallShiftPercentage).toBeLessThan(10);
+    expect(100 - smallShiftPercentage).toBeGreaterThan(90);
+    expect(smallShiftResult.diffPercentage).toBeLessThan(10);
+    expect(100 - smallShiftResult.diffPercentage).toBeGreaterThan(90);
+    expect(largeShiftPercentage).toBeGreaterThan(smallShiftPercentage * 4);
+  });
+
+  it('не даёт высокий процент попадания для разных плотных layout', () => {
+    const design = imageData(160, 160, [255, 255, 255, 255]);
+    const implementation = imageData(160, 160, [255, 255, 255, 255]);
+
+    for (let x = 6; x < 150; x += 20) {
+      fillRect(design, x, 8, 8, 144, [20, 90, 180, 255]);
+    }
+
+    for (let y = 6; y < 150; y += 20) {
+      fillRect(implementation, 8, y, 144, 8, [20, 90, 180, 255]);
+    }
+
+    const result = compareImageData(design, implementation, { threshold: 20, minArea: 1 }, {
+      designMeta: { name: 'vertical-layout', width: 160, height: 160 },
+      implementationMeta: { name: 'horizontal-layout', width: 160, height: 160 },
+      originalSizeMismatch: false,
+      heatmapUrl: 'data:image/png;base64,test'
+    });
+
+    expect(result.diffPercentage).toBeGreaterThan(50);
+    expect(100 - result.diffPercentage).toBeLessThan(50);
+  });
+
+  it('учитывает смену цвета даже при совпавших границах', () => {
+    const design = imageData(100, 80, [255, 255, 255, 255]);
+    const implementation = imageData(100, 80, [255, 255, 255, 255]);
+
+    fillRect(design, 20, 20, 40, 20, [20, 90, 180, 255]);
+    fillRect(implementation, 20, 20, 40, 20, [180, 40, 40, 255]);
+
+    const result = compareImageData(design, implementation, { threshold: 20, minArea: 1 }, {
+      designMeta: { name: 'blue-card', width: 100, height: 80 },
+      implementationMeta: { name: 'red-card', width: 100, height: 80 },
+      originalSizeMismatch: false,
+      heatmapUrl: 'data:image/png;base64,test'
+    });
+
+    expect(calculateBoundaryDiffPercentage(design, implementation)).toBe(0);
+    expect(result.diffPercentage).toBeCloseTo(33.33, 1);
+    expect(Number.isFinite(result.diffPercentage)).toBe(true);
+  });
+
+  it('применяет пользовательский threshold к итоговому проценту границ', () => {
+    const design = imageData(80, 60, [255, 255, 255, 255]);
+    const implementation = imageData(80, 60, [255, 255, 255, 255]);
+
+    fillRect(design, 16, 14, 30, 18, [245, 245, 245, 255]);
+    fillRect(implementation, 20, 14, 30, 18, [245, 245, 245, 255]);
+
+    const strictResult = compareImageData(design, implementation, { threshold: 5, minArea: 1 }, {
+      designMeta: { name: 'strict-design', width: 80, height: 60 },
+      implementationMeta: { name: 'strict-implementation', width: 80, height: 60 },
+      originalSizeMismatch: false,
+      heatmapUrl: 'data:image/png;base64,test'
+    });
+    const lenientResult = compareImageData(design, implementation, { threshold: 20, minArea: 1 }, {
+      designMeta: { name: 'lenient-design', width: 80, height: 60 },
+      implementationMeta: { name: 'lenient-implementation', width: 80, height: 60 },
+      originalSizeMismatch: false,
+      heatmapUrl: 'data:image/png;base64,test'
+    });
+
+    expect(strictResult.diffPercentage).toBeGreaterThan(0);
+    expect(lenientResult.diffPercentage).toBe(0);
+  });
+
+  it('считает пустой экран против непустого как серьёзное отличие', () => {
+    const design = imageData(100, 80, [255, 255, 255, 255]);
+    const implementation = imageData(100, 80, [255, 255, 255, 255]);
+
+    fillRect(implementation, 10, 10, 80, 55, [20, 90, 180, 255]);
+
+    const result = compareImageData(design, implementation, { threshold: 20, minArea: 1 }, {
+      designMeta: { name: 'blank', width: 100, height: 80 },
+      implementationMeta: { name: 'card', width: 100, height: 80 },
+      originalSizeMismatch: false,
+      heatmapUrl: 'data:image/png;base64,test'
+    });
+
+    expect(result.diffPercentage).toBeGreaterThan(50);
+    expect(Number.isFinite(result.diffPercentage)).toBe(true);
+  });
+
+  it('не превращает крошечный шум в полный провал', () => {
+    const design = imageData(100, 100, [255, 255, 255, 255]);
+    const implementation = imageData(100, 100, [255, 255, 255, 255]);
+
+    fillRect(implementation, 50, 50, 1, 1, [20, 20, 20, 255]);
+
+    const result = compareImageData(design, implementation, { threshold: 20, minArea: 1 }, {
+      designMeta: { name: 'clean', width: 100, height: 100 },
+      implementationMeta: { name: 'tiny-noise', width: 100, height: 100 },
+      originalSizeMismatch: false,
+      heatmapUrl: 'data:image/png;base64,test'
+    });
+
+    expect(result.diffPercentage).toBeLessThan(1);
+    expect(100 - result.diffPercentage).toBeGreaterThan(99);
+  });
+
+  it('оставляет процент попадания нулевым при совпавших границах', () => {
+    const design = imageData(40, 30, [255, 255, 255, 255]);
+    const implementation = imageData(40, 30, [255, 255, 255, 255]);
+
+    fillRect(design, 8, 6, 16, 10, [20, 90, 180, 255]);
+    fillRect(implementation, 8, 6, 16, 10, [20, 90, 180, 255]);
+
+    const result = compareImageData(design, implementation, { threshold: 20, minArea: 1 }, {
+      designMeta: { name: 'design', width: 40, height: 30 },
+      implementationMeta: { name: 'implementation', width: 40, height: 30 },
+      originalSizeMismatch: false,
+      heatmapUrl: 'data:image/png;base64,test'
+    });
+
+    expect(result.diffPercentage).toBe(0);
+    expect(100 - result.diffPercentage).toBe(100);
+  });
+
   it('находит область отличий и считает пиксели', () => {
     const design = imageData(8, 8, [255, 255, 255, 255]);
     const implementation = imageData(8, 8, [255, 255, 255, 255]);

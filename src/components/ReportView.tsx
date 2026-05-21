@@ -21,6 +21,8 @@ type Props = {
 
 type Tab = 'implementation' | 'side' | 'overlay';
 
+type ScoreStatus = 'empty' | 'low' | 'medium' | 'high';
+
 const SEVERITIES: Severity[] = ['high', 'medium', 'low'];
 const MISMATCH_TYPES: Array<{ type: MismatchType; label: string }> = [
   { type: 'size mismatch', label: 'Габариты' },
@@ -63,6 +65,19 @@ function clampPercent(value: number) {
 
 function clampOpacity(value: number) {
   return Math.max(0, Math.min(1, value));
+}
+
+function scoreStatus(score: number): Exclude<ScoreStatus, 'empty'> {
+  if (score < 50) return 'low';
+  if (score < 80) return 'medium';
+  return 'high';
+}
+
+function scoreMessage(status: ScoreStatus) {
+  if (status === 'low') return '😑 Ты можешь лучше!';
+  if (status === 'medium') return '😏 Ну почти...';
+  if (status === 'high') return '🤩 Ай молодец!';
+  return 'Загрузи макет и вёрстку';
 }
 
 function shiftArrowStyle(region: DiffRegion, result: ComparisonResult): CSSProperties {
@@ -186,8 +201,11 @@ export function ReportView({
   const excludedRegionCount = result ? excludedRegionIds.size : 0;
   const conformity = result ? Math.max(0, 100 - result.diffPercentage) : 0;
   const implementationPreviewUrl = implementation?.url ?? '';
-  const implementationCaption = showHeatmap ? 'Тепловая карта отличий' : 'Реализация';
+  const implementationCaption = showHeatmap ? 'Вёрстка с тепловой картой' : 'Вёрстка';
   const conformityBarValue = Math.max(0, Math.min(100, conformity));
+  const roundedConformity = result ? Math.round(conformityBarValue) : null;
+  const scoreTone = roundedConformity !== null ? scoreStatus(roundedConformity) : 'empty';
+  const scoreToneMessage = scoreMessage(scoreTone);
   const hasCompleteUpload = Boolean(design && implementation);
   const hasStaticSizeMismatch = Boolean(design && implementation && (design.width !== implementation.width || design.height !== implementation.height));
   const sizeMismatchMessage = hasStaticSizeMismatch && design && implementation ? getSizeMismatchErrorMessage(design, implementation) : null;
@@ -338,7 +356,7 @@ export function ReportView({
 
     context.imageSmoothingEnabled = false;
 
-    const baseImage = await imageUrlToImage(showHeatmap || tab === 'overlay' ? design.url : implementation.url);
+    const baseImage = await imageUrlToImage(tab === 'overlay' && !showHeatmap ? design.url : implementation.url);
     context.drawImage(baseImage, 0, 0, result.width, result.height);
 
     if (showHeatmap) {
@@ -437,14 +455,8 @@ export function ReportView({
     if (tab === 'implementation') {
       return (
         <ScaleCanvas width={result.width} height={result.height} className="implementation-stage" onClick={handleStageClick}>
-          {showHeatmap ? (
-            <>
-              <img className="base-image" src={design.url} alt="Макет в тепловой карте" />
-              <img className="overlay-image heatmap-overlay" style={{ opacity: overlayOpacity }} src={result.heatmapUrl} alt="Тепловая карта отличий" />
-            </>
-          ) : (
-            <img className="base-image" src={implementationPreviewUrl} alt="Вёрстка с отмеченными ошибками" />
-          )}
+          <img className="base-image" src={implementationPreviewUrl} alt="Вёрстка с отмеченными ошибками" />
+          {showHeatmap && <img className="overlay-image heatmap-overlay" style={{ opacity: overlayOpacity }} src={result.heatmapUrl} alt="Тепловая карта отличий" />}
           {renderRegionOverlays()}
         </ScaleCanvas>
       );
@@ -452,16 +464,12 @@ export function ReportView({
 
     if (tab === 'side') {
       return (
-        <div className="side-by-side">
-          <figure>
-            <figcaption>Макет</figcaption>
-            <img src={design.url} alt="Макет" />
-          </figure>
+        <div className="side-by-side single-preview">
           <figure style={{ '--canvas-ratio': result.width / result.height } as CSSProperties}>
             <figcaption>{implementationCaption}</figcaption>
             {showHeatmap ? (
               <span className="side-heatmap-preview">
-                <img className="base-image" src={design.url} alt="Макет в тепловой карте" />
+                <img className="base-image" src={implementationPreviewUrl} alt="Вёрстка" />
                 <img className="overlay-image heatmap-overlay" style={{ opacity: overlayOpacity }} src={result.heatmapUrl} alt="Тепловая карта отличий" />
               </span>
             ) : (
@@ -609,16 +617,17 @@ export function ReportView({
     <section className="report-grid">
       <div className="report-left-column">
         <div className="report-summary-row">
-          <div className="summary-card hero-summary" style={{ '--score-percent': `${conformityBarValue}%` } as CSSProperties}>
+          <div className={`summary-card hero-summary score-${scoreTone}`} style={{ '--score-percent': `${conformityBarValue}%` } as CSSProperties}>
             <div className="score-summary">
               <h2>Итог проверки</h2>
-              <div className="score-bar" role="img" aria-label={result ? `Соответствие ${formatPercent(conformity)}` : 'Соответствие появится после загрузки'}>
+              <p className="score-message">{scoreToneMessage}</p>
+              <div className="score-bar" role="img" aria-label={result ? `Соответствие ${formatPercent(conformity)}. ${scoreToneMessage}` : 'Соответствие появится после загрузки'}>
                 <span />
               </div>
             </div>
             <div className="score-value">
-              <span>{result ? Math.round(conformity) : '—'}</span>
-              {result && <small>%</small>}
+              <span>{roundedConformity ?? '—'}</span>
+              {roundedConformity !== null && <small>%</small>}
             </div>
           </div>
 

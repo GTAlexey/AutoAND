@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "winQ": "vite --host 127.0.0.1",
+    "macQ": "vite --host 127.0.0.1",
     "build": "tsc && vite build",
     "preview": "vite preview",
     "test": "vitest run"
